@@ -244,6 +244,11 @@ def login():
 
     return render_template("login.html")
 
+@app.errorhandler(404)
+def page_not_found(e):
+    return redirect(url_for('download'))
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
