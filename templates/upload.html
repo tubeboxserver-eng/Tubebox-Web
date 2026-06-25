@@ -279,21 +279,104 @@ document.addEventListener("DOMContentLoaded", function() {
 
         xhr.onreadystatechange = function() {
             if (xhr.readyState === 4) {
-                uploadBtn.disabled = false;
-                fileInput.disabled = false;
-                titleInput.disabled = false;
-                if (descInput) descInput.disabled = false;
-                
                 if (xhr.status === 200 || xhr.status === 201) {
-                    progressStatus.textContent = "Upload complete!";
-                    progressBar.classList.remove('bg-success');
-                    progressBar.classList.add('bg-primary');
-                    progressRemaining.textContent = "Video successfully uploaded! Redirecting...";
-                    
-                    setTimeout(function() {
-                        window.location.href = "/videos";
-                    }, 1500);
+                    let videoId = "";
+                    try {
+                        const responseObj = JSON.parse(xhr.responseText);
+                        if (responseObj.video && responseObj.video.id) {
+                            videoId = responseObj.video.id;
+                        }
+                    } catch(e) {}
+
+                    if (videoId) {
+                        progressBar.style.width = "0%";
+                        progressBar.setAttribute('aria-valuenow', 0);
+                        progressPercent.textContent = "0%";
+                        progressBar.classList.remove('bg-success');
+                        progressBar.classList.add('bg-warning');
+                        progressStatus.textContent = "Processing video on server (converting to HLS)...";
+                        progressRemaining.textContent = "Please wait while our server prepares the video. This might take a couple of minutes.";
+
+                        const pollUrl = `https://tubeboxservers-production.up.railway.app/api/admin/videos/${videoId}`;
+                        const pollInterval = setInterval(function() {
+                            const pollXhr = new XMLHttpRequest();
+                            pollXhr.open('GET', pollUrl, true);
+                            pollXhr.setRequestHeader('Authorization', 'Bearer ' + token);
+                            
+                            pollXhr.onreadystatechange = function() {
+                                if (pollXhr.readyState === 4) {
+                                    if (pollXhr.status === 200) {
+                                        try {
+                                            const videoData = JSON.parse(pollXhr.responseText);
+                                            if (videoData.status === 'READY') {
+                                                clearInterval(pollInterval);
+                                                progressBar.style.width = "100%";
+                                                progressBar.setAttribute('aria-valuenow', 100);
+                                                progressPercent.textContent = "100%";
+                                                progressBar.classList.remove('bg-warning');
+                                                progressBar.classList.add('bg-success');
+                                                progressStatus.textContent = "Processing complete!";
+                                                progressRemaining.textContent = "Video is ready! Redirecting...";
+                                                
+                                                // Re-enable input elements before redirection
+                                                uploadBtn.disabled = false;
+                                                fileInput.disabled = false;
+                                                titleInput.disabled = false;
+                                                if (descInput) descInput.disabled = false;
+                                                
+                                                setTimeout(function() {
+                                                    window.location.href = "/videos";
+                                                }, 1500);
+                                            } else if (videoData.status === 'FAILED') {
+                                                clearInterval(pollInterval);
+                                                
+                                                // Re-enable input elements
+                                                uploadBtn.disabled = false;
+                                                fileInput.disabled = false;
+                                                titleInput.disabled = false;
+                                                if (descInput) descInput.disabled = false;
+
+                                                progressContainer.classList.add('d-none');
+                                                errorOverlayStatus.textContent = "PROCESSING_FAILED";
+                                                errorOverlayMsg.textContent = "FFmpeg conversion failed. This might occur if the video stream format is invalid, unsupported, or if the server ran out of resources.";
+                                                errorOverlayStack.textContent = "Database video status updated to FAILED during background processing.";
+                                                errorOverlay.classList.remove('d-none');
+                                                errorOverlay.style.setProperty("display", "flex", "important");
+                                            } else {
+                                                const pct = videoData.processing_progress || 0;
+                                                progressBar.style.width = pct + "%";
+                                                progressBar.setAttribute('aria-valuenow', pct);
+                                                progressPercent.textContent = pct + "%";
+                                                progressStatus.textContent = `Processing video on server... (${pct}%)`;
+                                            }
+                                        } catch(e) {}
+                                    } else {
+                                        // Ignore transient network errors during polling
+                                    }
+                                }
+                            };
+                            pollXhr.send();
+                        }, 2500);
+                    } else {
+                        progressStatus.textContent = "Upload complete!";
+                        progressBar.classList.remove('bg-success');
+                        progressBar.classList.add('bg-primary');
+                        progressRemaining.textContent = "Video successfully uploaded! Redirecting...";
+                        
+                        uploadBtn.disabled = false;
+                        fileInput.disabled = false;
+                        titleInput.disabled = false;
+                        if (descInput) descInput.disabled = false;
+                        
+                        setTimeout(function() {
+                            window.location.href = "/videos";
+                        }, 1500);
+                    }
                 } else {
+                    uploadBtn.disabled = false;
+                    fileInput.disabled = false;
+                    titleInput.disabled = false;
+                    if (descInput) descInput.disabled = false;
                     let errMsg = "An unknown error occurred during video upload.";
                     let errStack = "";
                     try {
