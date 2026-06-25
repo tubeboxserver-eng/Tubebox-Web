@@ -118,9 +118,21 @@
                     {% endif %}
                     {% endwith %}
 
+                    <!-- Progress Bar Container -->
+                    <div id="progressContainer" class="d-none mb-4">
+                        <div class="d-flex justify-content-between mb-1 small fw-semibold">
+                            <span id="progressStatus">Uploading...</span>
+                            <span id="progressPercent">0%</span>
+                        </div>
+                        <div class="progress rounded-pill" style="height: 12px;">
+                            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                        <div class="text-center mt-2 small text-muted" id="progressRemaining"></div>
+                    </div>
+
                     <!-- Upload Button -->
                     <div class="d-grid mt-2">
-                        <button class="btn btn-success btn-lg rounded-4">
+                        <button type="submit" id="uploadBtn" class="btn btn-success btn-lg rounded-4">
                             <i class="fa-solid fa-cloud-arrow-up me-2"></i>
                             Upload Video
                         </button>
@@ -140,5 +152,193 @@
 
 </div>
 </section>
+
+<!-- Full-Screen Error Overlay -->
+<div id="errorOverlay" class="d-none" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(15, 23, 42, 0.95); z-index: 9999; overflow-y: auto; display: flex; align-items: center; justify-content: center;">
+    <div class="container py-5" style="max-width: 800px;">
+        <div class="card border-0 shadow-lg rounded-4 bg-dark text-white p-4 p-md-5 border border-secondary">
+            <div class="text-center mb-4">
+                <i class="fa-solid fa-circle-exclamation text-danger mb-3" style="font-size: 80px;"></i>
+                <h2 class="fw-bold text-danger">Upload Failed</h2>
+                <p class="text-muted">A server-side or connection error occurred during your video upload.</p>
+            </div>
+            
+            <div class="alert alert-danger bg-danger-subtle text-danger border-0 rounded-4 p-3 mb-4">
+                <div class="fw-bold mb-1">Error Description:</div>
+                <div id="errorOverlayMsg" class="font-monospace small">Something went wrong.</div>
+            </div>
+
+            <div class="mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="small fw-semibold text-secondary text-uppercase tracking-wider">Debug Details</span>
+                    <span class="badge bg-danger rounded-pill" id="errorOverlayStatus">500</span>
+                </div>
+                <pre class="bg-black text-light p-3 rounded-4 font-monospace small border border-secondary" style="max-height: 250px; overflow-y: auto;" id="errorOverlayStack">
+No additional debug stack trace available.
+                </pre>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mt-4">
+                <button type="button" class="btn btn-outline-secondary rounded-4 px-4 text-white" onclick="document.getElementById('errorOverlay').classList.add('d-none');">
+                    Dismiss
+                </button>
+                <button type="button" class="btn btn-primary rounded-4 px-4" onclick="location.reload();">
+                    Retry Upload
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const form = document.querySelector('form');
+    if (!form) return;
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const token = "{{ token }}";
+        const apiUrl = "https://tubeboxservers-production.up.railway.app/api/admin/videos";
+
+        const fileInput = form.querySelector('input[name="video"]');
+        const titleInput = form.querySelector('input[name="title"]');
+        const descInput = form.querySelector('textarea[name="description"]');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressPercent = document.getElementById('progressPercent');
+        const progressStatus = document.getElementById('progressStatus');
+        const progressRemaining = document.getElementById('progressRemaining');
+        const errorOverlay = document.getElementById('errorOverlay');
+        const errorOverlayMsg = document.getElementById('errorOverlayMsg');
+        const errorOverlayStatus = document.getElementById('errorOverlayStatus');
+        const errorOverlayStack = document.getElementById('errorOverlayStack');
+
+        if (!fileInput || !fileInput.files.length) {
+            alert("Please select a video file.");
+            return;
+        }
+
+        const file = fileInput.files[0];
+        const title = titleInput.value.trim();
+        const description = descInput ? descInput.value.trim() : "";
+
+        if (!title) {
+            alert("Please enter a video title.");
+            return;
+        }
+
+        // Disable input elements
+        uploadBtn.disabled = true;
+        fileInput.disabled = true;
+        titleInput.disabled = true;
+        if (descInput) descInput.disabled = true;
+
+        progressContainer.classList.remove('d-none');
+        progressStatus.textContent = "Preparing files...";
+        progressBar.style.width = "0%";
+        progressPercent.textContent = "0%";
+
+        const formData = new FormData();
+        formData.append('video', file);
+        formData.append('title', title);
+        formData.append('description', description);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', apiUrl, true);
+        xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+
+        let startTime = Date.now();
+
+        xhr.upload.addEventListener('progress', function(event) {
+            if (event.lengthComputable) {
+                const percentComplete = Math.round((event.loaded / event.total) * 100);
+                progressBar.style.width = percentComplete + "%";
+                progressBar.setAttribute('aria-valuenow', percentComplete);
+                progressPercent.textContent = percentComplete + "%";
+                progressStatus.textContent = percentComplete < 100 ? "Uploading video file..." : "Finalizing and processing on server...";
+
+                const elapsedMs = Date.now() - startTime;
+                if (elapsedMs > 0) {
+                    const bytesPerMs = event.loaded / elapsedMs;
+                    const remainingBytes = event.total - event.loaded;
+                    const remainingMs = remainingBytes / bytesPerMs;
+                    
+                    const speedMbps = ((bytesPerMs * 1000 * 8) / (1024 * 1024)).toFixed(1);
+                    const remainingSec = Math.round(remainingMs / 1000);
+                    
+                    if (percentComplete < 100) {
+                        progressRemaining.textContent = `${speedMbps} Mbps • Approx. ${remainingSec}s remaining`;
+                    } else {
+                        progressRemaining.textContent = "Processing video on server, please do not close this window...";
+                    }
+                }
+            }
+        });
+
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+                uploadBtn.disabled = false;
+                fileInput.disabled = false;
+                titleInput.disabled = false;
+                if (descInput) descInput.disabled = false;
+                
+                if (xhr.status === 200 || xhr.status === 201) {
+                    progressStatus.textContent = "Upload complete!";
+                    progressBar.classList.remove('bg-success');
+                    progressBar.classList.add('bg-primary');
+                    progressRemaining.textContent = "Video successfully uploaded! Redirecting...";
+                    
+                    setTimeout(function() {
+                        window.location.href = "/videos";
+                    }, 1500);
+                } else {
+                    let errMsg = "An unknown error occurred during video upload.";
+                    let errStack = "";
+                    try {
+                        const responseObj = JSON.parse(xhr.responseText);
+                        errMsg = responseObj.error || responseObj.message || errMsg;
+                        if (responseObj.details) {
+                            errMsg += ` (${responseObj.details})`;
+                        }
+                        if (responseObj.stack) {
+                            errStack = responseObj.stack;
+                        } else {
+                            errStack = JSON.stringify(responseObj, null, 2);
+                        }
+                    } catch(e) {
+                        errMsg = xhr.responseText || errMsg;
+                    }
+
+                    progressContainer.classList.add('d-none');
+                    
+                    errorOverlayStatus.textContent = xhr.status;
+                    errorOverlayMsg.textContent = errMsg;
+                    errorOverlayStack.textContent = errStack || "No stack trace returned by the server.";
+                    errorOverlay.classList.remove('d-none');
+                    errorOverlay.style.setProperty("display", "flex", "important");
+                }
+            }
+        };
+
+        xhr.onerror = function() {
+            uploadBtn.disabled = false;
+            fileInput.disabled = false;
+            titleInput.disabled = false;
+            if (descInput) descInput.disabled = false;
+            progressContainer.classList.add('d-none');
+
+            errorOverlayStatus.textContent = "CONNECTION_ERROR";
+            errorOverlayMsg.textContent = "Could not establish connection to the backend server. Please verify your internet connection and make sure the API server is online.";
+            errorOverlayStack.textContent = "XMLHttpRequest.onerror triggered. This usually means a CORS policy block, an offline API server, or DNS resolution failure.";
+            errorOverlay.classList.remove('d-none');
+            errorOverlay.style.setProperty("display", "flex", "important");
+        };
+
+        xhr.send(formData);
+    });
+});
+</script>
 
 {% endblock %}

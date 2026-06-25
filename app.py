@@ -71,7 +71,7 @@ def upload():
             except:
                 flash(response.text)
 
-    return render_template("upload.html")
+    return render_template("upload.html", token=session.get('token'))
 
 import time
 from flask import make_response
@@ -198,7 +198,7 @@ def asset_links():
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
-      "package_name": "com.starwish.tubeboxs",
+      "package_name": "com.tube.box.entertainment.app",
       "sha256_cert_fingerprints": [
         "24:5E:C1:5F:01:10:24:30:30:D6:F9:46:A8:C8:88:BA:C7:4F:11:87:E7:67:AD:1C:CE:B1:3D:89:6C:AA:68:F5"
       ]
